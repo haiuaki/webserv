@@ -1,6 +1,12 @@
+# Binaries
+webserv
+
 # Object files
 *.o
 /obj
 
 # LSP file
 compile_flags.txt
+
+# OS Generated files
+.DS_Store
