@@ -1,0 +1,76 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++03
+
+# Indentation & Line Length
+ColumnLimit: 80
+IndentWidth: 4
+TabWidth: 4
+UseTab: AlignWithSpaces
+
+# Alignment & Spacing
+SpacesInAngles: Leave
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+SpaceBeforeParens: ControlStatements
+SpaceBeforeAssignmentOperators: true
+SpaceAfterCStyleCast: false
+PenaltyBreakAssignment: 100
+AlignTrailingComments: true
+AlignConsecutiveMacros: true
+MaxEmptyLinesToKeep: 1
+
+# Classes & Structs
+IndentAccessModifiers: true
+AccessModifierOffset: -4
+EmptyLineBeforeAccessModifier: Always
+BreakInheritanceList: BeforeComma
+
+# Constructor Initializers
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: NextLine
+
+# Blocks, Braces & Control Flow
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+BreakBeforeBinaryOperators: NonAssignment
+IndentCaseLabels: true
+
+# Namespaces & Comments
+FixNamespaceComments: true
+ReflowComments: true
+
+# Brace Wrapping
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterExternBlock: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+
+# Include Sorting & Grouping
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:           '^<ext/.*\.h>'
+    Priority:        2
+  - Regex:           '^<.*\.h>'
+    Priority:        1
+  - Regex:           '^<.*>'
+    Priority:        2
+  - Regex:           '.*'
+    Priority:        3
