@@ -4,8 +4,10 @@
 
 NAME		=	webserv
 
+TEST_CFG	=	test_config_parser
+
 CXX			=	c++
-CXXFLAGS	=	-Wall -Wextra -Werror -std=c++98 -I$(INCDIR)
+CXXFLAGS	=	-Wall -Wextra -Werror -std=c++98 -I$(INCDIR) -MMD -MP
 
 INCDIR		=	include
 SRCDIR		=	src
@@ -15,19 +17,32 @@ OBJDIR		=	obj
 #                                 SOURCE FILES                                 #
 # ════════════════════════════════════════════════════════════════════════════ #
 
-SRCS		=	main.cpp
+CORE_SRCS	=	core/ServerManager.cpp
+
+CONFIG_SRCS	=	config/ConfigParser.cpp \
+				config/ServerConfig.cpp \
+				config/LocationConfig.cpp
+
+UTILS_SRCS	=	utils/Utils.cpp
+
+SRCS		=	main.cpp \
+				$(CORE_SRCS) \
+				$(CONFIG_SRCS) \
+				$(UTILS_SRCS)
 
 # ════════════════════════════════════════════════════════════════════════════ #
 #                                 OBJECT FILES                                 #
 # ════════════════════════════════════════════════════════════════════════════ #
 
 OBJS		= $(addprefix $(OBJDIR)/, $(SRCS:.cpp=.o))
+DEPS		= $(OBJS:.o=.d)
 
 # ════════════════════════════════════════════════════════════════════════════ #
 #                                PHONY TARGETS                                 #
 # ════════════════════════════════════════════════════════════════════════════ #
 
-.PHONY: all clean fclean re
+.PHONY: all clean fclean re \
+        test_config_parser
 
 # ════════════════════════════════════════════════════════════════════════════ #
 #                                DEFAULT TARGET                                #
@@ -43,6 +58,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+-include $(DEPS)
 $(NAME): $(OBJS)
 	@$(CXX) $(CXXFLAGS) $(OBJS) -o $@
 	@echo "✓ $(NAME) created successfully"
@@ -55,6 +71,21 @@ clean:
 	rm -rf obj
 
 fclean: clean
-	rm -f $(NAME)
+	rm -f $(NAME) $(TEST_CFG)
 
 re: fclean all
+
+# ════════════════════════════════════════════════════════════════════════════ #
+#                                  TEST RULES                                  #
+# ════════════════════════════════════════════════════════════════════════════ #
+
+TEST_SRCS	= tests/test_config_parser.cpp \
+			  $(filter-out $(SRCDIR)/main.cpp, $(addprefix $(SRCDIR)/, $(SRCS)))
+
+test_config_parser:
+	@echo "Compiling $(TEST_CFG)..."
+	@$(CXX) $(CXXFLAGS) $(TEST_SRCS) -o $(TEST_CFG)
+	@echo "✓ $(TEST_CFG) created successfully"
+	@chmod +x tests/run_parser_tests.sh
+	@./tests/run_parser_tests.sh
+	@rm -rf $(TEST_CFG) $(TEST_CFG).d $(TEST_CFG).dSYM

@@ -1,8 +1,10 @@
 # Binaries
 webserv
+test_config_parser
 
-# Object files
+# Object files & Dependencies
 *.o
+*.d
 /obj
 
 # LSP file
