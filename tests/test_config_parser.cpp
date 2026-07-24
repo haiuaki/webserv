@@ -6,6 +6,8 @@
 #include "core/ServerManager.hpp"
 #include "utils/Colors.hpp"
 
+bool g_isRunning = true;
+
 int main(int ac, char** av) {
 	if (ac != 2) {
 		std::cerr << RED << "Usage: " << av[0] << " <configuration file>"

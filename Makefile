@@ -19,6 +19,9 @@ OBJDIR		=	obj
 
 CORE_SRCS	=	core/ServerManager.cpp
 
+NET_SRCS	=	network/Server.cpp \
+				network/Client.cpp
+
 CONFIG_SRCS	=	config/ConfigParser.cpp \
 				config/ServerConfig.cpp \
 				config/LocationConfig.cpp
@@ -27,6 +30,7 @@ UTILS_SRCS	=	utils/Utils.cpp
 
 SRCS		=	main.cpp \
 				$(CORE_SRCS) \
+				$(NET_SRCS) \
 				$(CONFIG_SRCS) \
 				$(UTILS_SRCS)
 
@@ -42,7 +46,7 @@ DEPS		= $(OBJS:.o=.d)
 # ════════════════════════════════════════════════════════════════════════════ #
 
 .PHONY: all clean fclean re \
-        test_config_parser
+        test test_config_parser test_multiplexer
 
 # ════════════════════════════════════════════════════════════════════════════ #
 #                                DEFAULT TARGET                                #
@@ -82,6 +86,8 @@ re: fclean all
 TEST_SRCS	= tests/test_config_parser.cpp \
 			  $(filter-out $(SRCDIR)/main.cpp, $(addprefix $(SRCDIR)/, $(SRCS)))
 
+test: test_config_parser test_multiplexer
+
 test_config_parser:
 	@echo "Compiling $(TEST_CFG)..."
 	@$(CXX) $(CXXFLAGS) $(TEST_SRCS) -o $(TEST_CFG)
@@ -89,3 +95,6 @@ test_config_parser:
 	@chmod +x tests/run_parser_tests.sh
 	@./tests/run_parser_tests.sh
 	@rm -rf $(TEST_CFG) $(TEST_CFG).d $(TEST_CFG).dSYM
+
+test_multiplexer:
+	@python3 tests/test_multiplexer.py
