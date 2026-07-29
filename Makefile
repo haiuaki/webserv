@@ -22,7 +22,8 @@ CORE_SRCS	=	core/ServerManager.cpp
 NET_SRCS	=	network/Server.cpp \
 				network/Client.cpp
 
-HTTP_SRCS	=	http/HttpRequest.cpp
+HTTP_SRCS	=	http/HttpRequest.cpp \
+				http/HttpResponse.cpp
 
 CONFIG_SRCS	=	config/ConfigParser.cpp \
 				config/ServerConfig.cpp \
