@@ -2,6 +2,7 @@
 #include <cstring>
 #include <exception>
 #include <iostream>
+#include <string>
 
 #include "config/ConfigParser.hpp"
 #include "core/ServerManager.hpp"

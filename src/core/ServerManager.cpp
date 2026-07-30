@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <cstddef>
 #include <cstring>
 #include <iostream>
 #include <map>
@@ -235,16 +236,32 @@ bool ServerManager::handleClientRequest(int clientFd) {
 	int bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
 
 	if (bytesRead > 0) {
-		// Append the raw binary data to the client's persistent buffer
+		// Feed the raw binary data into the HttpRequest state machine
 		clients_[clientFd]->appendRequestData(buffer, bytesRead);
 
-		std::cout << GRAY << "[LOG] " << BLUE << "Read " << bytesRead
-				  << " bytes from client FD " << clientFd
-				  << " (Total Buffer Size: "
-				  << clients_[clientFd]->getRequestBuffer().size()
-				  << " bytes)\n"
-				  << RESET;
-		return true; // Keep connection open
+		if (clients_[clientFd]->request.isComplete()) {
+			std::cout << GRAY << "[LOG] " << GREEN
+					  << "Successfully Parsed Request from FD " << clientFd
+					  << ":\n"
+					  << "      Method: "
+					  << clients_[clientFd]->request.getMethod() << "\n"
+					  << "      URI:    "
+					  << clients_[clientFd]->request.getUri() << "\n"
+					  << RESET;
+
+			// NOTE: Once the `Router` is built, we will pass the request to it
+			// here
+			return true;
+		} else if (clients_[clientFd]->request.hasError()) {
+			std::cout << GRAY << "[LOG] " << RED << "Bad Request from FD "
+					  << clientFd << ": "
+					  << clients_[clientFd]->request.getErrorMessage() << '\n'
+					  << RESET;
+			return false;
+		} else {
+			// Request's still parsing, wait for more data from `poll()`
+			return true;
+		} // Keep connection open
 	} else if (bytesRead == 0) {
 		// Browser closed the tab or connection gracefully
 		return false;

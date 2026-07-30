@@ -3,6 +3,8 @@
 
 #include <string>
 
+#include "http/HttpRequest.hpp"
+
 class Client {
 	public:
 		// --- CONSTRUCTOR -------------------------------------------------- //
@@ -14,13 +16,14 @@ class Client {
 		// --- GETTERS ------------------------------------------------------ //
 		int getFd() const;
 		const std::string& getIp() const;
-		const std::string& getRequestBuffer() const;
+
+		// --- ATTRIBUTE ---------------------------------------------------- //
+		HttpRequest request;
 
 	private:
 		// --- ATTRIBUTES --------------------------------------------------- //
 		int fd_;
 		std::string ip_;
-		std::string requestBuffer_;
 };
 
 #endif

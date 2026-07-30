@@ -2,6 +2,7 @@
 #define SERVERMANAGER_HPP
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "config/ServerConfig.hpp"

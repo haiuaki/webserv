@@ -23,6 +23,15 @@ namespace utils {
 int stringToInt(const std::string& s);
 
 /**
+ * @brief Trims leading and trailing whitespace from a string.
+ *
+ * @param s The string to trim.
+ *
+ * @return std::string The trimmed string.
+ */
+std::string trim(const std::string& s);
+
+/**
  * @brief Converts any streamable data type to `std::string`.
  *
  * This template acts as a C++98-compliant alternative to C++11's

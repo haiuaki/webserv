@@ -22,6 +22,8 @@ CORE_SRCS	=	core/ServerManager.cpp
 NET_SRCS	=	network/Server.cpp \
 				network/Client.cpp
 
+HTTP_SRCS	=	http/HttpRequest.cpp
+
 CONFIG_SRCS	=	config/ConfigParser.cpp \
 				config/ServerConfig.cpp \
 				config/LocationConfig.cpp
@@ -31,6 +33,7 @@ UTILS_SRCS	=	utils/Utils.cpp
 SRCS		=	main.cpp \
 				$(CORE_SRCS) \
 				$(NET_SRCS) \
+				$(HTTP_SRCS) \
 				$(CONFIG_SRCS) \
 				$(UTILS_SRCS)
 
@@ -46,7 +49,7 @@ DEPS		= $(OBJS:.o=.d)
 # ════════════════════════════════════════════════════════════════════════════ #
 
 .PHONY: all clean fclean re \
-        test test_config_parser test_multiplexer
+        test test_config_parser test_multiplexer test_requests
 
 # ════════════════════════════════════════════════════════════════════════════ #
 #                                DEFAULT TARGET                                #
@@ -86,7 +89,7 @@ re: fclean all
 TEST_SRCS	= tests/test_config_parser.cpp \
 			  $(filter-out $(SRCDIR)/main.cpp, $(addprefix $(SRCDIR)/, $(SRCS)))
 
-test: test_config_parser test_multiplexer
+test: test_config_parser test_multiplexer test_requests
 
 test_config_parser:
 	@echo "Compiling $(TEST_CFG)..."
@@ -98,3 +101,6 @@ test_config_parser:
 
 test_multiplexer:
 	@python3 tests/test_multiplexer.py
+
+test_requests:
+	@python3 tests/test_requests.py
