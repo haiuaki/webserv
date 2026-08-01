@@ -93,7 +93,7 @@ void HttpRequest::parse(const std::string& rawData) {
 
 void HttpRequest::clear() {
 	state_ = STATE_REQUEST_LINE;
-	rawBuffer_.clear();
+	// We MUST NOT clear rawBuffer_ here, so that pipelined requests survive!
 	errorCode_ = 0;
 	errorMessage_.clear();
 	
@@ -175,9 +175,12 @@ void HttpRequest::parseBody() {
 	if (headers_.count("Content-Length") > 0) {
 		size_t expectedSize = utils::stringToInt(headers_["Content-Length"]);
 
-		// Append downloaded raw bytes to the body string and erase the buffer
-		body_ += rawBuffer_;
-		rawBuffer_.clear();
+		// Only extract the exact number of bytes we still need
+		size_t bytesNeeded = expectedSize - body_.length();
+		size_t bytesToTake = std::min(bytesNeeded, rawBuffer_.length());
+
+		body_ += rawBuffer_.substr(0, bytesToTake);
+		rawBuffer_.erase(0, bytesToTake);
 
 		if (body_.length() >= expectedSize) {
 			// If we downaloaded all bytes, the request is finished

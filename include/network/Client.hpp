@@ -16,22 +16,25 @@
 class Client {
 	public:
 		// --- CONSTRUCTOR -------------------------------------------------- //
-		Client(int fd, const std::string& ip);
+		Client(int fd, int serverFd, const std::string& ip);
 
 		// --- METHOD ------------------------------------------------------- //
 		void appendRequestData(const char* data, int length);
 
 		// --- GETTERS ------------------------------------------------------ //
 		int getFd() const;
+		int getServerFd() const;
 		const std::string& getIp() const;
 
 		// --- ATTRIBUTES --------------------------------------------------- //
 		HttpRequest request;
 		HttpResponse response;
+		std::string responseQueue;
 
 	private:
 		// --- ATTRIBUTES --------------------------------------------------- //
 		int fd_;
+		int serverFd_;
 		std::string ip_;
 };
 

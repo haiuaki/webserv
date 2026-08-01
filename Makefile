@@ -17,7 +17,8 @@ OBJDIR		=	obj
 #                                 SOURCE FILES                                 #
 # ════════════════════════════════════════════════════════════════════════════ #
 
-CORE_SRCS	=	core/ServerManager.cpp
+CORE_SRCS	=	core/ServerManager.cpp \
+				core/Router.cpp
 
 NET_SRCS	=	network/Server.cpp \
 				network/Client.cpp
@@ -50,7 +51,8 @@ DEPS		= $(OBJS:.o=.d)
 # ════════════════════════════════════════════════════════════════════════════ #
 
 .PHONY: all clean fclean re \
-        test test_config_parser test_multiplexer test_requests
+        test test_config_parser test_multiplexer test_requests test_router \
+		test_large_file
 
 # ════════════════════════════════════════════════════════════════════════════ #
 #                                DEFAULT TARGET                                #
@@ -90,7 +92,7 @@ re: fclean all
 TEST_SRCS	= tests/test_config_parser.cpp \
 			  $(filter-out $(SRCDIR)/main.cpp, $(addprefix $(SRCDIR)/, $(SRCS)))
 
-test: test_config_parser test_multiplexer test_requests
+test: test_config_parser test_multiplexer test_requests test_router test_large_file
 
 test_config_parser:
 	@echo "Compiling $(TEST_CFG)..."
@@ -105,3 +107,9 @@ test_multiplexer:
 
 test_requests:
 	@python3 tests/test_requests.py
+
+test_router:
+	@python3 tests/test_router.py
+
+test_large_file:
+	@python3 tests/test_large_file.py

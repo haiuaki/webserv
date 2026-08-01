@@ -6,7 +6,8 @@
 
 // --- CONSTRUCTOR ---------------------------------------------------------- //
 
-Client::Client(int fd, const std::string& ip) : fd_(fd), ip_(ip) {}
+Client::Client(int fd, int serverFd, const std::string& ip)
+	: fd_(fd), serverFd_(serverFd), ip_(ip) {}
 
 // --- METHOD --------------------------------------------------------------- //
 
@@ -19,6 +20,10 @@ void Client::appendRequestData(const char* data, int length) {
 
 int Client::getFd() const {
 	return fd_;
+}
+
+int Client::getServerFd() const {
+	return serverFd_;
 }
 
 const std::string& Client::getIp() const {

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "config/ServerConfig.hpp"
+#include "core/Router.hpp"
 #include "utils/Colors.hpp"
 
 extern bool g_isRunning;
@@ -116,8 +117,15 @@ void ServerManager::run() {
 			}
 			// Are we ready to send an HTTP Response back?
 			else if (it->revents & POLLOUT) {
-				handleClientResponse(it->fd);
-				++it;
+				if (!handleClientResponse(it->fd)) {
+					it = closeConnection(it);
+				} else {
+					// Switch back to reading for Keep-Alive if fully sent
+					if (clients_[it->fd]->responseQueue.empty()) {
+						it->events = POLLIN;
+					}
+					++it;
+				}
 			}
 			// Did the client brutally disconnect?
 			else if (it->revents & POLLHUP) {
@@ -225,7 +233,7 @@ void ServerManager::acceptNewConnection(int serverFd) {
 	newPollFds_.push_back(spfd);
 
 	// Create the persistent Client object
-	clients_[clientFd] = new Client(clientFd, clientIP);
+	clients_[clientFd] = new Client(clientFd, serverFd, clientIP);
 
 	std::cout << GRAY << "[LOG] " << CYAN << "New connection from " << clientIP
 			  << " established on FD: " << clientFd << RESET << '\n';
@@ -238,30 +246,7 @@ bool ServerManager::handleClientRequest(int clientFd) {
 	if (bytesRead > 0) {
 		// Feed the raw binary data into the HttpRequest state machine
 		clients_[clientFd]->appendRequestData(buffer, bytesRead);
-
-		if (clients_[clientFd]->request.isComplete()) {
-			std::cout << GRAY << "[LOG] " << GREEN
-					  << "Successfully Parsed Request from FD " << clientFd
-					  << ":\n"
-					  << "      Method: "
-					  << clients_[clientFd]->request.getMethod() << "\n"
-					  << "      URI:    "
-					  << clients_[clientFd]->request.getUri() << "\n"
-					  << RESET;
-
-			// NOTE: Once the `Router` is built, we will pass the request to it
-			// here
-			return true;
-		} else if (clients_[clientFd]->request.hasError()) {
-			std::cout << GRAY << "[LOG] " << RED << "Bad Request from FD "
-					  << clientFd << ": "
-					  << clients_[clientFd]->request.getErrorMessage() << '\n'
-					  << RESET;
-			return false;
-		} else {
-			// Request's still parsing, wait for more data from `poll()`
-			return true;
-		} // Keep connection open
+		return processParsedRequest(clientFd);
 	} else if (bytesRead == 0) {
 		// Browser closed the tab or connection gracefully
 		return false;
@@ -273,11 +258,117 @@ bool ServerManager::handleClientRequest(int clientFd) {
 	}
 }
 
-void ServerManager::handleClientResponse(int clientFd) {
-	std::cout << GRAY << "[LOG] " << MAGENTA
-			  << "Sending response to client FD: " << clientFd << '.' << RESET
-			  << '\n';
-	// TODO: send()
+bool ServerManager::processParsedRequest(int clientFd) {
+	if (clients_[clientFd]->request.isComplete()) {
+		std::cout << GRAY << "[LOG] " << GREEN
+				  << "Successfully Parsed Request from FD " << clientFd << ":\n"
+				  << "      Method: " << clients_[clientFd]->request.getMethod()
+				  << "\n"
+				  << "      URI:    " << clients_[clientFd]->request.getUri()
+				  << "\n"
+				  << RESET;
+
+		// Route the request
+		const ServerConfig* targetConfig = NULL;
+		int serverFd = clients_[clientFd]->getServerFd();
+		for (size_t i = 0; i < servers_.size(); ++i) {
+			if (servers_[i]->getListenFd() == serverFd) {
+				std::string host = clients_[clientFd]->request.getHeader(
+					"Host");
+				const std::vector<const ServerConfig*>& configs =
+					servers_[i]->getConfigs();
+
+				targetConfig = configs[0]; // Fallback
+				for (size_t j = 0; j < configs.size(); ++j) {
+					const std::vector<std::string>& names =
+						configs[j]->getServerNames();
+					for (size_t k = 0; k < names.size(); ++k) {
+						if (names[k] == host) {
+							targetConfig = configs[j];
+							break;
+						}
+					}
+				}
+				break;
+			}
+		}
+
+		if (targetConfig) {
+			Router::route(clients_[clientFd]->request,
+			              clients_[clientFd]->response, *targetConfig);
+
+			// Serialize exactly ONCE to the outgoing queue buffer
+			clients_[clientFd]->responseQueue =
+				clients_[clientFd]->response.serialize();
+
+			// Find this client in pollFds_ to set POLLOUT
+			for (size_t i = 0; i < pollFds_.size(); ++i) {
+				if (pollFds_[i].fd == clientFd) {
+					pollFds_[i].events = POLLOUT;
+					break;
+				}
+			}
+		}
+		return true;
+	} else if (clients_[clientFd]->request.hasError()) {
+		std::cout << GRAY << "[LOG] " << RED << "Bad Request from FD "
+				  << clientFd << ": "
+				  << clients_[clientFd]->request.getErrorMessage() << '\n'
+				  << RESET;
+		return false;
+	} else {
+		// Request's still parsing, wait for more data from `poll()`
+		return true;
+	}
+}
+
+bool ServerManager::handleClientResponse(int clientFd) {
+	Client* client = clients_[clientFd];
+
+	ssize_t bytesSent = send(clientFd, client->responseQueue.c_str(),
+	                         client->responseQueue.length(), 0);
+
+	if (bytesSent > 0) {
+		// Slice off what was successfully sent
+		client->responseQueue.erase(0, bytesSent);
+
+		// Is there more to send?
+		if (!client->responseQueue.empty()) {
+			std::cout << GRAY << "[LOG] " << MAGENTA
+					  << "Partial response sent to FD " << clientFd << " ("
+					  << bytesSent << " bytes). Waiting to send more..."
+					  << RESET << '\n';
+			return true; // Keep POLLOUT active!
+		}
+
+		std::cout << GRAY << "[LOG] " << MAGENTA << "Response fully sent to FD "
+				  << clientFd << "!" << RESET << '\n';
+
+		// Keep-Alive check! HTTP/1.1 defaults to keep-alive unless 'Connection:
+		// close' is explicitly sent by client.
+		if (client->request.getHeader("Connection") == "close") {
+			return false; // Close the connection
+		}
+
+		// Keep-Alive! Clear state for the next request.
+		client->request.clear();
+		client->response.clear();
+
+		// Immediately trigger parsing to catch any pipelined requests sitting
+		// in the buffer
+		client->request.parse("");
+		if (client->request.isComplete() || client->request.hasError()) {
+			return processParsedRequest(clientFd);
+		}
+
+		return true;
+	} else if (bytesSent == 0) {
+		return false;
+	} else {
+		std::cerr << RED << "[ERROR] `send()` failed on client FD " << clientFd
+				  << RESET << '\n';
+		return false;
+	}
 }
 
 std::vector<struct pollfd>::iterator

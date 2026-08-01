@@ -77,7 +77,14 @@ class ServerManager {
 		 * @param clientFd The file descriptor of the client expecting a
 		 *                 response.
 		 */
-		void handleClientResponse(int clientFd);
+		bool handleClientResponse(int clientFd);
+		
+		/**
+		 * @brief Routes a fully parsed request or handles a syntax error.
+		 * 
+		 * @param clientFd The file descriptor of the client.
+		 */
+		bool processParsedRequest(int clientFd);
 		/**
 		 * @brief Safely shuts down a client socket and purges its memory.
 		 *

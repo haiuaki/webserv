@@ -18,6 +18,7 @@ class Server {
 		int getListenFd() const;
 		const std::string& getHost() const;
 		uint16_t getPort() const;
+		const std::vector<const ServerConfig*>& getConfigs() const;
 
 		// --- SETTERS ------------------------------------------------------ //
 		void addConfig(const ServerConfig* config);

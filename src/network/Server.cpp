@@ -43,6 +43,10 @@ uint16_t Server::getPort() const {
 	return port_;
 }
 
+const std::vector<const ServerConfig*>& Server::getConfigs() const {
+	return configs_;
+}
+
 // --- SETTERS -------------------------------------------------------------- //
 
 void Server::addConfig(const ServerConfig* config) {

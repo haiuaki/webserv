@@ -163,12 +163,34 @@ def send_invalid_method():
     except Exception as e:
         print(f"{RED}[!] Error connecting to server: {e}{RESET}")
 
+def send_pipelined_requests():
+    print(f"\n{MAGENTA}=== Testing: Pipelined Requests (2 requests in 1 packet) ==={RESET}")
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((HOST, PORT))
+        
+        # Send two completely separate HTTP requests jammed into a single string/packet!
+        request1 = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        request2 = "GET /api HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        
+        combined = request1 + request2
+        print_request(combined, "Sending Pipelined Packet")
+        s.sendall(combined.encode())
+        
+        # We wait 1 second to give the server time to process BOTH requests!
+        time.sleep(1)
+        s.close()
+        print(f"{GREEN}[+] SUCCESS: Pipelined requests sent! Check server logs to verify BOTH were parsed.{RESET}")
+    except Exception as e:
+        print(f"{RED}[!] Error connecting to server: {e}{RESET}")
+
 if __name__ == "__main__":
     print(f"\n{MAGENTA}--- STARTING HTTP REQUEST TESTS ---{RESET}")
     send_standard_get()
     send_standard_post()
     send_evil_fragmented_request()
     send_chunked_request()
+    send_pipelined_requests()
     send_invalid_transfer_encoding()
     send_invalid_http_version()
     send_invalid_method()
