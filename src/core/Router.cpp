@@ -1,5 +1,11 @@
 #include "core/Router.hpp"
 
+#include <dirent.h>
+#include <ctime>
+#include "utils/Utils.hpp"
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -26,6 +32,29 @@ void Router::route(const HttpRequest& request, HttpResponse& response,
 
 	const LocationConfig* location = matchLocation(request.getUri(), server);
 
+	// Check max body size
+	size_t maxBodySize = (location != NULL) ? location->getClientMaxBodySize()
+	                                        : server.getClientMaxBodySize();
+	if (maxBodySize > 0 && request.getBody().length() > maxBodySize) {
+		generateErrorResponse(413, response, server, location);
+		return;
+	}
+
+	// Check HTTP Redirection
+	if (location != NULL) {
+		const std::pair<int, std::string>& ret = location->getReturn();
+		if (ret.first != 0) { // Assuming 0 means not set
+			response.setStatusCode(ret.first);
+			response.setHeader("Location", ret.second);
+			response.setHeader("Content-Type", "text/html");
+			response.setBody("<html><body><h1>"
+			                 + HttpResponse::getReasonPhrase(ret.first)
+			                 + "</h1><a href=\"" + ret.second
+			                 + "\">Moved</a></body></html>");
+			return;
+		}
+	}
+
 	const std::string& method = request.getMethod();
 
 	if (location) {
@@ -48,7 +77,7 @@ void Router::route(const HttpRequest& request, HttpResponse& response,
 	static std::map<std::string, MethodHandler> handlers;
 	if (handlers.empty()) {
 		handlers["GET"] = &Router::handleGet;
-		// handlers["POST"] = &Router::handlePost;
+		handlers["POST"] = &Router::handlePost;
 		handlers["DELETE"] = &Router::handleDelete;
 	}
 
@@ -88,52 +117,172 @@ const LocationConfig* Router::matchLocation(const std::string& uri,
 
 // --- METHOD HANDLERS ------------------------------------------------------ //
 
+static std::string getMimeType(const std::string& path) {
+	size_t dotPos = path.find_last_of('.');
+	if (dotPos == std::string::npos)
+		return "text/plain";
+	std::string ext = path.substr(dotPos);
+	if (ext == ".html" || ext == ".htm")
+		return "text/html";
+	if (ext == ".css")
+		return "text/css";
+	if (ext == ".js")
+		return "application/javascript";
+	if (ext == ".png")
+		return "image/png";
+	if (ext == ".jpg" || ext == ".jpeg")
+		return "image/jpeg";
+	if (ext == ".gif")
+		return "image/gif";
+	if (ext == ".ico")
+		return "image/x-icon";
+	if (ext == ".json")
+		return "application/json";
+	if (ext == ".pdf")
+		return "application/pdf";
+	if (ext == ".txt")
+		return "text/plain";
+	return "application/octet-stream";
+}
+
 void Router::handleGet(const HttpRequest& request, HttpResponse& response,
                        const ServerConfig& server,
                        const LocationConfig* location) {
-	// Determine the root, fallbacks to server root if no location matched
 	std::string root = (location != NULL) ? location->getRootPath()
 	                                      : server.getRootPath();
-
-	// Safety fallback in case the config didn't specify a root
 	if (root.empty()) {
 		root = "./html";
 	}
 
-	// Build the file path (e.g., "./html" + "/index.html")
 	std::string filepath = root + request.getUri();
+	struct stat path_stat;
 
-	// If they request a directory, assume "index.html"
-	if (filepath[filepath.length() - 1] == '/') {
-		filepath += "index.html";
-	}
-
-	// Try to open the file
-	std::ifstream file(filepath.c_str());
-	if (!file.is_open()) {
-		// 404 Not Found
+	if (stat(filepath.c_str(), &path_stat) != 0) {
 		generateErrorResponse(404, response, server, location);
 		return;
 	}
 
-	// Read the entire file into a string buffer
+	if (S_ISDIR(path_stat.st_mode)) {
+		if (filepath[filepath.length() - 1] != '/') {
+			response.setStatusCode(301);
+			response.setHeader("Location", request.getUri() + "/");
+			return;
+		}
+
+		bool indexFound = false;
+		const std::vector<std::string>& indexFiles =
+			(location != NULL) ? location->getIndexFiles()
+							   : server.getIndexFiles();
+		std::vector<std::string> defaultIndexes = indexFiles;
+		if (defaultIndexes.empty())
+			defaultIndexes.push_back("index.html");
+
+		for (size_t i = 0; i < defaultIndexes.size(); ++i) {
+			std::string testPath = filepath + defaultIndexes[i];
+			if (stat(testPath.c_str(), &path_stat) == 0
+			    && S_ISREG(path_stat.st_mode)) {
+				filepath = testPath;
+				indexFound = true;
+				break;
+			}
+		}
+
+		if (!indexFound) {
+			bool autoindex = (location != NULL) ? location->isAutoindex()
+			                                    : false;
+			if (autoindex) {
+				DIR* dir = opendir(filepath.c_str());
+				if (dir) {
+					std::ostringstream html;
+					html << "<html><head><title>Index of " << request.getUri()
+						 << "</title></head><body>";
+					html << "<h1>Index of " << request.getUri()
+						 << "</h1><hr><pre>";
+					struct dirent* ent;
+					while ((ent = readdir(dir)) != NULL) {
+						std::string name = ent->d_name;
+						if (name == ".")
+							continue;
+						html << "<a href=\"" << name
+							 << (ent->d_type == DT_DIR ? "/" : "") << "\">"
+							 << name << (ent->d_type == DT_DIR ? "/" : "")
+							 << "</a>\n";
+					}
+					html << "</pre><hr></body></html>";
+					closedir(dir);
+
+					response.setStatusCode(200);
+					response.setHeader("Content-Type", "text/html");
+					response.setBody(html.str());
+					return;
+				} else {
+					generateErrorResponse(403, response, server, location);
+					return;
+				}
+			} else {
+				generateErrorResponse(403, response, server, location);
+				return;
+			}
+		}
+	}
+
+	std::ifstream file(filepath.c_str());
+	if (!file.is_open()) {
+		generateErrorResponse(403, response, server, location);
+		return;
+	}
+
 	std::ostringstream oss;
 	oss << file.rdbuf();
 
-	// Build the successful respone (200 OK)
 	response.setStatusCode(200);
-	response.setHeader("Content-Type", "text/html");
+	response.setHeader("Content-Type", getMimeType(filepath));
 	response.setBody(oss.str());
 }
 
 void Router::handlePost(const HttpRequest& request, HttpResponse& response,
                         const ServerConfig& server,
                         const LocationConfig* location) {
-	// TODO: Build the CGI execution engine first
-	(void)request;
-	(void)response;
-	(void)server;
-	(void)location;
+	std::string uploadDir = (location != NULL) ? location->getUploadDir() : "";
+
+	if (!uploadDir.empty()) {
+		std::string root = (location != NULL) ? location->getRootPath()
+		                                      : server.getRootPath();
+		if (root.empty())
+			root = "./html";
+
+		std::string uploadPath = root + uploadDir;
+		if (uploadPath[uploadPath.length() - 1] != '/')
+			uploadPath += "/";
+
+		// Very basic extraction of a filename. In a real app, parse
+		// multipart/form-data. Here, we just use a default name or extract from
+		// URI for simple tests.
+		std::string filename = "upload_" + utils::toString(time(NULL));
+		size_t lastSlash = request.getUri().find_last_of('/');
+		if (lastSlash != std::string::npos
+		    && lastSlash != request.getUri().length() - 1) {
+			filename = request.getUri().substr(lastSlash + 1);
+		}
+
+		std::string fullPath = uploadPath + filename;
+		std::ofstream outFile(fullPath.c_str(), std::ios::binary);
+
+		if (outFile.is_open()) {
+			outFile.write(request.getBody().data(), request.getBody().length());
+			outFile.close();
+			response.setStatusCode(201); // 201 Created
+			response.setHeader("Content-Type", "text/plain");
+			response.setBody("File uploaded successfully.");
+			return;
+		} else {
+			generateErrorResponse(500, response, server, location);
+			return;
+		}
+	}
+
+	// TODO: CGI execution for POST requests
+	generateErrorResponse(501, response, server, location);
 }
 
 void Router::handleDelete(const HttpRequest& request, HttpResponse& response,

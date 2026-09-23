@@ -214,8 +214,8 @@ void ServerManager::acceptNewConnection(int serverFd) {
 	// Extract Client IP for future CGI usage
 	std::string clientIP = inet_ntoa(clientAddr.sin_addr);
 
-	// Make the socket non-blocking
-	if (fcntl(clientFd, F_SETFL, O_NONBLOCK) == -1) {
+	// Make the socket non-blocking and close-on-exec
+	if (fcntl(clientFd, F_SETFL, O_NONBLOCK | FD_CLOEXEC) == -1) {
 		std::cerr << RED << "[ERROR] `fcntl()` failed on client FD " << clientFd
 				  << RESET << '\n';
 		close(clientFd);

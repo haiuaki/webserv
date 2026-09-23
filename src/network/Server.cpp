@@ -69,8 +69,8 @@ void Server::setupSocket() {
 		throw std::runtime_error("`setsockopt()` failed");
 	}
 
-	// Make the socket non-blocking
-	if (fcntl(listenFd_, F_SETFL, O_NONBLOCK) == -1) {
+	// Make the socket non-blocking and close-on-exec
+	if (fcntl(listenFd_, F_SETFL, O_NONBLOCK | FD_CLOEXEC) == -1) {
 		throw std::runtime_error("`fcntl()` failed to set non-blocking");
 	}
 
