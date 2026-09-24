@@ -7,7 +7,13 @@
 // --- CONSTRUCTOR ---------------------------------------------------------- //
 
 Client::Client(int fd, int serverFd, const std::string& ip)
-	: fd_(fd), serverFd_(serverFd), ip_(ip) {}
+	: cgiPid(-1)
+	, cgiReadFd(-1)
+	, cgiWriteFd(-1)
+	, isCgiRunning(false)
+	, fd_(fd)
+	, serverFd_(serverFd)
+	, ip_(ip) {}
 
 // --- METHOD --------------------------------------------------------------- //
 

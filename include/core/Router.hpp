@@ -8,18 +8,20 @@
 #include "http/HttpRequest.hpp"
 #include "http/HttpResponse.hpp"
 
+class Client;
+
 /**
  * @brief The central routing engine of the Web Server.
  *
- * Takes a parsed `HttpRequest`, matches it against the `ServerConfig`,
- * and generates the appropriate `HttpResponse` (e.g., serving static files,
- * executing CGI, generating autoindexes, or producing error pages.).
+ * Takes a parsed `HttpRequest` (via `Client`), matches it against the
+ * `ServerConfig`, and generates the appropriate `HttpResponse` (e.g., serving
+ * static files, executing CGI, generating autoindexes, or producing error
+ * pages.).
  */
 class Router {
 	public:
 		// --- MAIN ENTRY --------------------------------------------------- //
-		static void route(const HttpRequest& request, HttpResponse& response,
-		                  const ServerConfig& server);
+		static void route(Client& client, const ServerConfig& server);
 
 	private:
 		// --- CONSTRUCTOR (Hidden) ----------------------------------------- //
@@ -30,19 +32,13 @@ class Router {
 		                                           const ServerConfig& server);
 
 		// --- METHOD HANDLERS ---------------------------------------------- //
-		static void handleGet(const HttpRequest& request,
-		                      HttpResponse& response,
-		                      const ServerConfig& server,
+		static void handleGet(Client& client, const ServerConfig& server,
 		                      const LocationConfig* location);
 
-		static void handlePost(const HttpRequest& request,
-		                       HttpResponse& response,
-		                       const ServerConfig& server,
+		static void handlePost(Client& client, const ServerConfig& server,
 		                       const LocationConfig* location);
 
-		static void handleDelete(const HttpRequest& request,
-		                         HttpResponse& response,
-		                         const ServerConfig& server,
+		static void handleDelete(Client& client, const ServerConfig& server,
 		                         const LocationConfig* location);
 
 		// --- ERROR HANDLER ------------------------------------------------ //

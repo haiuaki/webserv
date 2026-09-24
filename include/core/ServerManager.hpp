@@ -55,6 +55,16 @@ class ServerManager {
 		 *         connection.
 		 */
 		bool isServerFd(int fd);
+
+		/**
+		 * @brief Searches active clients to find the owner of a CGI pipe.
+		 *
+		 * @param fd The file descriptor of the CGI pipe (read or write).
+		 *
+		 * @return Pointer to the Client tracking this CGI process, or NULL.
+		 */
+		Client* getClientByCgiFd(int fd);
+
 		/**
 		 * @brief Accepts a new client connection on the specified server
 		 *        socket.
@@ -62,6 +72,7 @@ class ServerManager {
 		 * @param serverFd The file descriptor of the listening server.
 		 */
 		void acceptNewConnection(int serverFd);
+
 		/**
 		 * @brief Reads incoming HTTP request data from an active client socket.
 		 *
@@ -71,6 +82,7 @@ class ServerManager {
 		 *         dropped.
 		 */
 		bool handleClientRequest(int clientFd);
+
 		/**
 		 * @brief Generates and transmits the HTTP response back to the client.
 		 *
@@ -78,13 +90,14 @@ class ServerManager {
 		 *                 response.
 		 */
 		bool handleClientResponse(int clientFd);
-		
+
 		/**
 		 * @brief Routes a fully parsed request or handles a syntax error.
-		 * 
+		 *
 		 * @param clientFd The file descriptor of the client.
 		 */
 		bool processParsedRequest(int clientFd);
+
 		/**
 		 * @brief Safely shuts down a client socket and purges its memory.
 		 *

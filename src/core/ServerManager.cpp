@@ -5,13 +5,16 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <map>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -108,7 +111,7 @@ void ServerManager::run() {
 				++it;
 			}
 			// Is it a client sending us an HTTP Request?
-			else if (it->revents & POLLIN) {
+			else if (it->revents & POLLIN && clients_.count(it->fd)) {
 				if (!handleClientRequest(it->fd)) {
 					it = closeConnection(it);
 				} else {
@@ -116,7 +119,7 @@ void ServerManager::run() {
 				}
 			}
 			// Are we ready to send an HTTP Response back?
-			else if (it->revents & POLLOUT) {
+			else if (it->revents & POLLOUT && clients_.count(it->fd)) {
 				if (!handleClientResponse(it->fd)) {
 					it = closeConnection(it);
 				} else {
@@ -128,10 +131,124 @@ void ServerManager::run() {
 				}
 			}
 			// Did the client brutally disconnect?
-			else if (it->revents & POLLHUP) {
+			else if (it->revents & POLLHUP && clients_.count(it->fd)) {
 				it = closeConnection(it);
-			} else {
-				++it;
+			}
+			// Is it a CGI pipe?
+			else {
+				Client* cgiClient = getClientByCgiFd(it->fd);
+				if (cgiClient) {
+					if (it->revents & POLLOUT
+					    && it->fd == cgiClient->cgiWriteFd) {
+						// Write POST body to CGI stdin
+						ssize_t written = write(
+							it->fd, cgiClient->cgiBodyRemaining.c_str(),
+							cgiClient->cgiBodyRemaining.length());
+						if (written > 0) {
+							cgiClient->cgiBodyRemaining.erase(0, written);
+						}
+
+						// If we're done writing, close the write pipe so CGI
+						// gets EOF
+						if (cgiClient->cgiBodyRemaining.empty()
+						    || written <= 0) {
+							close(cgiClient->cgiWriteFd);
+							cgiClient->cgiWriteFd = -1;
+							it = pollFds_.erase(
+								it); // Remove the write pipe from poll
+							continue;
+						}
+						++it;
+					} else if (it->revents & POLLIN
+					           && it->fd == cgiClient->cgiReadFd) {
+						// Read CGI stdout into buffer
+						char buffer[4096];
+						ssize_t bytesRead = read(it->fd, buffer,
+						                         sizeof(buffer) - 1);
+						if (bytesRead > 0) {
+							cgiClient->cgiOutput.append(buffer, bytesRead);
+							++it;
+						} else {
+							// CGI Finished (EOF or Error)
+							close(cgiClient->cgiReadFd);
+							cgiClient->cgiReadFd = -1;
+							it = pollFds_.erase(
+								it); // Remove read pipe from poll
+
+							// Reap the zombie
+							waitpid(cgiClient->cgiPid, NULL, WNOHANG);
+
+							// Parse CGI Output and build HTTP Response
+							cgiClient->isCgiRunning = false;
+
+							// Find headers vs body
+							size_t headerEnd = cgiClient->cgiOutput.find(
+								"\r\n\r\n");
+							if (headerEnd == std::string::npos)
+								headerEnd = cgiClient->cgiOutput.find("\n\n");
+
+							if (headerEnd != std::string::npos) {
+								std::string headers =
+									cgiClient->cgiOutput.substr(0, headerEnd);
+								std::string body = cgiClient->cgiOutput.substr(
+									headerEnd
+									+ (cgiClient->cgiOutput[headerEnd] == '\r'
+								           ? 4
+								           : 2));
+
+								cgiClient->response.setStatusCode(200);
+								cgiClient->response.setBody(body);
+
+								// Crude header parsing
+								std::istringstream stream(headers);
+								std::string line;
+								while (std::getline(stream, line)) {
+									if (!line.empty()
+									    && line[line.length() - 1] == '\r')
+										line.erase(line.length() - 1);
+									size_t colon = line.find(':');
+									if (colon != std::string::npos) {
+										std::string key = line.substr(0, colon);
+										std::string val = line.substr(colon
+										                              + 1);
+										// Trim spaces
+										size_t start = val.find_first_not_of(
+											" \t");
+										if (start != std::string::npos)
+											val = val.substr(start);
+										if (key == "Status") {
+											cgiClient->response.setStatusCode(
+												std::atoi(val.c_str()));
+										} else {
+											cgiClient->response.setHeader(key,
+											                              val);
+										}
+									}
+								}
+							} else {
+								cgiClient->response.setStatusCode(
+									502); // Bad Gateway
+								cgiClient->response.setBody("Bad Gateway");
+							}
+
+							cgiClient->responseQueue =
+								cgiClient->response.serialize();
+
+							// Flag the client socket for POLLOUT
+							for (size_t i = 0; i < pollFds_.size(); ++i) {
+								if (pollFds_[i].fd == cgiClient->getFd()) {
+									pollFds_[i].events = POLLOUT;
+									break;
+								}
+							}
+							continue;
+						}
+					} else {
+						++it;
+					}
+				} else {
+					++it;
+				}
 			}
 		}
 
@@ -197,6 +314,16 @@ bool ServerManager::isServerFd(int fd) {
 		}
 	}
 	return false;
+}
+
+Client* ServerManager::getClientByCgiFd(int fd) {
+	std::map<int, Client*>::iterator it;
+	for (it = clients_.begin(); it != clients_.end(); ++it) {
+		if (it->second->cgiReadFd == fd || it->second->cgiWriteFd == fd) {
+			return it->second;
+		}
+	}
+	return NULL;
 }
 
 void ServerManager::acceptNewConnection(int serverFd) {
@@ -294,8 +421,28 @@ bool ServerManager::processParsedRequest(int clientFd) {
 		}
 
 		if (targetConfig) {
-			Router::route(clients_[clientFd]->request,
-			              clients_[clientFd]->response, *targetConfig);
+			Router::route(*clients_[clientFd], *targetConfig);
+
+			// If CGI is running, do NOT serialize response yet.
+			// CGI pipes will trigger the rest of the flow.
+			if (clients_[clientFd]->isCgiRunning) {
+				struct pollfd pRead;
+				std::memset(&pRead, 0, sizeof(pRead));
+				pRead.fd = clients_[clientFd]->cgiReadFd;
+				pRead.events = POLLIN;
+				pRead.revents = 0;
+				newPollFds_.push_back(pRead);
+
+				if (clients_[clientFd]->cgiWriteFd != -1) {
+					struct pollfd pWrite;
+					std::memset(&pWrite, 0, sizeof(pWrite));
+					pWrite.fd = clients_[clientFd]->cgiWriteFd;
+					pWrite.events = POLLOUT;
+					pWrite.revents = 0;
+					newPollFds_.push_back(pWrite);
+				}
+				return true;
+			}
 
 			// Serialize exactly ONCE to the outgoing queue buffer
 			clients_[clientFd]->responseQueue =
@@ -353,6 +500,12 @@ bool ServerManager::handleClientResponse(int clientFd) {
 		// Keep-Alive! Clear state for the next request.
 		client->request.clear();
 		client->response.clear();
+		client->cgiOutput.clear();
+		client->cgiBodyRemaining.clear();
+		client->isCgiRunning = false;
+		client->cgiPid = -1;
+		client->cgiReadFd = -1;
+		client->cgiWriteFd = -1;
 
 		// Immediately trigger parsing to catch any pipelined requests sitting
 		// in the buffer

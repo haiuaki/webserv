@@ -18,7 +18,8 @@ OBJDIR		=	obj
 # ════════════════════════════════════════════════════════════════════════════ #
 
 CORE_SRCS	=	core/ServerManager.cpp \
-				core/Router.cpp
+				core/Router.cpp \
+				core/CgiHandler.cpp
 
 NET_SRCS	=	network/Server.cpp \
 				network/Client.cpp

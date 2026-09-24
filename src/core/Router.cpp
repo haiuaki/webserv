@@ -1,14 +1,13 @@
 #include "core/Router.hpp"
 
 #include <dirent.h>
-#include <ctime>
-#include "utils/Utils.hpp"
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -18,13 +17,17 @@
 
 #include "config/LocationConfig.hpp"
 #include "config/ServerConfig.hpp"
+#include "core/CgiHandler.hpp"
 #include "http/HttpRequest.hpp"
 #include "http/HttpResponse.hpp"
+#include "utils/Utils.hpp"
 
 // --- MAIN ENTRY ----------------------------------------------------------- //
 
-void Router::route(const HttpRequest& request, HttpResponse& response,
-                   const ServerConfig& server) {
+void Router::route(Client& client, const ServerConfig& server) {
+	const HttpRequest& request = client.request;
+	HttpResponse& response = client.response;
+
 	if (request.hasError()) {
 		generateErrorResponse(request.getErrorCode(), response, server, NULL);
 		return;
@@ -72,8 +75,8 @@ void Router::route(const HttpRequest& request, HttpResponse& response,
 		}
 	}
 
-	typedef void (*MethodHandler)(const HttpRequest&, HttpResponse&,
-	                              const ServerConfig&, const LocationConfig*);
+	typedef void (*MethodHandler)(Client&, const ServerConfig&,
+	                              const LocationConfig*);
 	static std::map<std::string, MethodHandler> handlers;
 	if (handlers.empty()) {
 		handlers["GET"] = &Router::handleGet;
@@ -82,7 +85,7 @@ void Router::route(const HttpRequest& request, HttpResponse& response,
 	}
 
 	if (handlers.count(method) > 0) {
-		handlers[method](request, response, server, location);
+		handlers[method](client, server, location);
 	} else {
 		// (501 Not Implemented)
 		generateErrorResponse(501, response, server, location);
@@ -145,9 +148,11 @@ static std::string getMimeType(const std::string& path) {
 	return "application/octet-stream";
 }
 
-void Router::handleGet(const HttpRequest& request, HttpResponse& response,
-                       const ServerConfig& server,
+void Router::handleGet(Client& client, const ServerConfig& server,
                        const LocationConfig* location) {
+	const HttpRequest& request = client.request;
+	HttpResponse& response = client.response;
+
 	std::string root = (location != NULL) ? location->getRootPath()
 	                                      : server.getRootPath();
 	if (root.empty()) {
@@ -226,6 +231,30 @@ void Router::handleGet(const HttpRequest& request, HttpResponse& response,
 		}
 	}
 
+	if (location) {
+		const std::map<std::string, std::string>& cgis =
+			location->getCgiHandlers();
+		std::string ext = "";
+		size_t dotPos = filepath.find_last_of('.');
+		if (dotPos != std::string::npos)
+			ext = filepath.substr(dotPos);
+
+		if (cgis.count(ext) > 0) {
+			try {
+				CgiHandler cgi(request, server, location, filepath,
+				               client.getIp());
+				cgi.execute(client.cgiReadFd, client.cgiWriteFd, client.cgiPid);
+				client.isCgiRunning = true;
+				client.cgiOutput.clear();
+				client.cgiBodyRemaining = request.getBody();
+			} catch (const std::exception& e) {
+				std::cerr << "[CGI ERROR] " << e.what() << "\n";
+				generateErrorResponse(500, response, server, location);
+			}
+			return; // Response is handled asynchronously via CGI pipes
+		}
+	}
+
 	std::ifstream file(filepath.c_str());
 	if (!file.is_open()) {
 		generateErrorResponse(403, response, server, location);
@@ -240,9 +269,41 @@ void Router::handleGet(const HttpRequest& request, HttpResponse& response,
 	response.setBody(oss.str());
 }
 
-void Router::handlePost(const HttpRequest& request, HttpResponse& response,
-                        const ServerConfig& server,
+void Router::handlePost(Client& client, const ServerConfig& server,
                         const LocationConfig* location) {
+	const HttpRequest& request = client.request;
+	HttpResponse& response = client.response;
+
+	std::string root = (location != NULL) ? location->getRootPath()
+	                                      : server.getRootPath();
+	if (root.empty())
+		root = "./html";
+	std::string filepath = root + request.getUri();
+
+	if (location) {
+		const std::map<std::string, std::string>& cgis =
+			location->getCgiHandlers();
+		std::string ext = "";
+		size_t dotPos = filepath.find_last_of('.');
+		if (dotPos != std::string::npos)
+			ext = filepath.substr(dotPos);
+
+		if (cgis.count(ext) > 0) {
+			try {
+				CgiHandler cgi(request, server, location, filepath,
+				               client.getIp());
+				cgi.execute(client.cgiReadFd, client.cgiWriteFd, client.cgiPid);
+				client.isCgiRunning = true;
+				client.cgiOutput.clear();
+				client.cgiBodyRemaining = request.getBody();
+			} catch (const std::exception& e) {
+				std::cerr << "[CGI ERROR] " << e.what() << "\n";
+				generateErrorResponse(500, response, server, location);
+			}
+			return; // Response is handled asynchronously via CGI pipes
+		}
+	}
+
 	std::string uploadDir = (location != NULL) ? location->getUploadDir() : "";
 
 	if (!uploadDir.empty()) {
@@ -281,13 +342,14 @@ void Router::handlePost(const HttpRequest& request, HttpResponse& response,
 		}
 	}
 
-	// TODO: CGI execution for POST requests
+	// If not upload and not CGI, 501 Not Implemented
 	generateErrorResponse(501, response, server, location);
 }
 
-void Router::handleDelete(const HttpRequest& request, HttpResponse& response,
-                          const ServerConfig& server,
+void Router::handleDelete(Client& client, const ServerConfig& server,
                           const LocationConfig* location) {
+	const HttpRequest& request = client.request;
+	HttpResponse& response = client.response;
 	// Determine the root, fallbacks to server root if no location matched
 	std::string root = (location != NULL) ? location->getRootPath()
 	                                      : server.getRootPath();

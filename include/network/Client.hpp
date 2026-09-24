@@ -31,6 +31,13 @@ class Client {
 		HttpResponse response;
 		std::string responseQueue;
 
+		pid_t cgiPid;
+		int cgiReadFd;
+		int cgiWriteFd;
+		std::string cgiOutput;
+		std::string cgiBodyRemaining;
+		bool isCgiRunning;
+
 	private:
 		// --- ATTRIBUTES --------------------------------------------------- //
 		int fd_;
